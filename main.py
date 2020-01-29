@@ -7,7 +7,7 @@ import os, sys, pkg_resources
 import time
 import argparse
 from multiprocessing import Pool, cpu_count
-# from functools import partial
+from functools import partial
 import pprint
 
 
@@ -17,7 +17,6 @@ class EncDec:
 
     def encrypt(self, filename: str, just_name=False):
         f_start = time.time()
-
         chunksize = 64 * 1024
         filesize = os.path.getsize(filename)
         IV = get_random_bytes(16)
@@ -27,7 +26,6 @@ class EncDec:
         nonce = b64encode(cipher.nonce).decode('utf-8')
         ct = b64encode(ciphertext).decode('utf-8')
         outFile = os.path.join(os.path.dirname(filename), "enc_{}".format((nonce + ct).replace('/', 'XXX')))
-
         if just_name:
             return outFile
 
@@ -45,15 +43,12 @@ class EncDec:
         print("Encrypting file %s (%d)MB" % (filename, filesize >> 20))
         with open(filename, "rb") as infile:
             with open(outFile, "wb") as outfile:
-
                 outfile.write(str(filesize).zfill(16).encode("utf8"))
                 outfile.write(IV)
                 while True:
                     chunk = infile.read(chunksize)
-
                     if len(chunk) == 0:
                         break
-
                     elif len(chunk) % 16 != 0:
                         chunk += b' ' * (16 - (len(chunk) % 16))
 
@@ -180,21 +175,27 @@ class EncDecManager:
         return new_path
 
     def dec_files(self, remove_old=False):
-        # TODO: make multi-process
         paths = self.split_to_types()
         self._enc_dec_list(paths['enc_file_list'], enc=False, remove_old=remove_old)
 
     def enc_files(self, remove_old=False):
-        # TODO: make multi-process
         paths = self.split_to_types()
         self._enc_dec_list(paths['norm_file_list'], enc=True, remove_old=remove_old)
 
     def _enc_dec_list(self, paths, enc: bool, remove_old):
-        for f in paths:
-            f_orig_path = f.real_path
-            res = f.encrypt(self.enc_dec) if enc else f.decrypt(self.enc_dec)
-            if res and remove_old and res != f_orig_path:
-                os.remove(f_orig_path)
+        partial_func = partial(self._launch_single_end_dec, enc, remove_old)
+        with Pool(self.workers) as p:
+            p.map(partial_func, paths)
+            p.close()
+            p.join()
+            print("done files")
+        # TODO: add work on folders
+
+    def _launch_single_end_dec(self, enc: bool, remove_old: bool, path: EncPath, ):
+        f_orig_path = path.real_path
+        res = path.encrypt(self.enc_dec) if enc else path.decrypt(self.enc_dec)
+        if res and remove_old and res != f_orig_path:
+            os.remove(f_orig_path)
 
     @staticmethod
     def allfiles(path: str) -> (list, list):
