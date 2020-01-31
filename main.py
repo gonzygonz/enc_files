@@ -15,10 +15,13 @@ class EncDec:
     def __init__(self, key):
         self.key = SHA256.new(key).digest()
 
-    def encrypt(self, filename: str, just_name=False):
+    def encrypt(self, filename: str, just_name=False, random_iv=False):
         f_start = time.time()
         chunksize = 64 * 1024
         filesize = os.path.getsize(filename)
+        # from what i understand as long as i dont have a common prefix, there is no problem using a constant IV
+        # Consider using this in the future
+        # IV = get_random_bytes(16) if random_iv else b'asdfasdfasdfasdf'
         IV = get_random_bytes(16)
         encryptor = AES.new(self.key, AES.MODE_CBC, IV)
         cipher = ChaCha20.new(key=self.key)
@@ -151,12 +154,13 @@ class EncDecManager:
             self.file_list.append(EncPath(Tfile))
 
     def print_paths(self):
-        res = self.split_to_types(convert_to_paths=True)
+        res = self._convert_to_paths(self.split_to_types())
+
         pp = pprint.PrettyPrinter(indent=4, width=300)
         print("Not encrypted Files:")
-        pp.pprint(res['norm_file_list'])
+        pp.pprint([p for (p, ep) in res['norm_file_list']])
         print("\nNot encrypted Folders")
-        pp.pprint(res['norm_folder_list'])
+        pp.pprint([p for (p, ep) in res['norm_folder_list']])
         print("\nEncrypted Files")
         pp.pprint(res['enc_file_list'])
         print("\nEncrypted Folders")
@@ -180,7 +184,16 @@ class EncDecManager:
 
     def enc_files(self, remove_old=False):
         paths = self.split_to_types()
-        self._enc_dec_list(paths['norm_file_list'], enc=True, remove_old=remove_old)
+        existing_enc_files = [p.get_dec_name(self.enc_dec) for p in paths['enc_file_list']]
+        files_to_enc = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) not in existing_enc_files]
+        # TODO: maybe make this list cubstraction with implementing == on EncPath class
+        if len(files_to_enc) != len(paths['norm_file_list']):
+            files_not_to_enc = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) in existing_enc_files]
+            pp = pprint.PrettyPrinter(indent=4, width=300)
+            print("Files already encrypted:")
+            pp.pprint([p.get_dec_name(self.enc_dec) for p in files_not_to_enc])
+            # TODO: implement the __str__ and __repr__ for EncPath to make this easier to print
+        self._enc_dec_list(files_to_enc, enc=True, remove_old=remove_old)
 
     def _enc_dec_list(self, paths, enc: bool, remove_old):
         partial_func = partial(self._launch_single_end_dec, enc, remove_old)
@@ -209,17 +222,19 @@ class EncDecManager:
 
         return allFiles, allFolders
 
-    def split_to_types(self, convert_to_paths=False):
-        result = {}
-        result["norm_file_list"] = [f for f in self.file_list if f.is_file and (not f.is_enc)]
-        result["enc_file_list"] = [f for f in self.file_list if f.is_file and f.is_enc]
-        result["norm_folder_list"] = [f for f in self.file_list if (not f.is_file) and (not f.is_enc)]
-        result["enc_folder_list"] = [f for f in self.file_list if (not f.is_file) and f.is_enc]
-        if convert_to_paths:
-            for l in result:
-                result[l] = [f.get_dec_name(self.enc_dec) for f in result[l]]
-
+    def split_to_types(self):
+        result = {
+            "norm_file_list": [f for f in self.file_list if f.is_file and (not f.is_enc)],
+            "enc_file_list": [f for f in self.file_list if f.is_file and f.is_enc],
+            "norm_folder_list": [f for f in self.file_list if (not f.is_file) and (not f.is_enc)],
+            "enc_folder_list": [f for f in self.file_list if (not f.is_file) and f.is_enc],
+        }
         return result
+
+    def _convert_to_paths(self, names_dict):
+        for l in names_dict:
+            names_dict[l] = [(f.get_dec_name(self.enc_dec), f.get_enc_name(self.enc_dec)) for f in names_dict[l]]
+        return names_dict
 
 
 def dir_path(string):
