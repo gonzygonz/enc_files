@@ -9,6 +9,7 @@ import argparse
 from multiprocessing import Pool, cpu_count
 from functools import partial
 import pprint
+from collections import defaultdict
 
 
 class EncDec:
@@ -128,34 +129,46 @@ class EncPath:
     def decrypt(self, enc_dec: EncDec):
         if self.is_enc:
             self.dec_name = enc_dec.decrypt(self.real_path)
-            self.real_path = self.dec_name
-            self.is_enc = False
+            if self.dec_name:
+                self.real_path = self.dec_name
+                self.is_enc = False
             return self.dec_name
         return None
 
     def encrypt(self, enc_dec: EncDec):
         if not self.is_enc:
             self.enc_name = enc_dec.encrypt(self.real_path)
-            self.real_path = self.enc_name
-            self.is_enc = True
+            if self.enc_name:
+                self.real_path = self.enc_name
+                self.is_enc = True
             return self.enc_name
         return None
+
+    def update_parent_path(self, new_path):
+        orig_parent = os.path.dirname(self.real_path)
+        self.dec_name = self.dec_name.replace(orig_parent, new_path)
+        self.enc_name = self.dec_name.replace(orig_parent, new_path)
+        self.real_path = self.dec_name.replace(orig_parent, new_path)
 
 
 class EncDecManager:
     def __init__(self, key, workers=1):
         self.enc_dec = EncDec(key)
         self.file_list = []
+        self.folders_childes = defaultdict(set)
         self.workers = workers
 
     def scan_path(self, path: str):
         allFiles, allFolders = self.allfiles(path)
         for Tfile in allFiles + allFolders:
-            self.file_list.append(EncPath(Tfile))
+            encpath = EncPath(Tfile)
+            self.file_list.append(encpath)
+            if not encpath.is_file:
+                # Keep track of parents. this makes rename folders in O(n) instead of O(n^2)
+                self.folders_childes[os.path.dirname(Tfile)].add(encpath)
 
     def print_paths(self):
         res = self._convert_to_paths(self.split_to_types())
-
         pp = pprint.PrettyPrinter(indent=4, width=300)
         print("Not encrypted Files:")
         pp.pprint([p for (p, ep) in res['norm_file_list']])
@@ -180,11 +193,18 @@ class EncDecManager:
 
     def dec_files(self, remove_old=False):
         paths = self.split_to_types()
+        # Start with files. Decoder knows not to work if decoded version exists
         self._enc_dec_list(paths['enc_file_list'], enc=False, remove_old=remove_old)
+
+        # Now decrypt folder names
+        self._enc_dec_folders(paths['enc_folder_list'], enc=False)
 
     def enc_files(self, remove_old=False):
         paths = self.split_to_types()
+        # Start with encrypting files
         existing_enc_files = [p.get_dec_name(self.enc_dec) for p in paths['enc_file_list']]
+
+        # Work only on files that doesnt have encrypted version yet
         files_to_enc = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) not in existing_enc_files]
         # TODO: maybe make this list cubstraction with implementing == on EncPath class
         if len(files_to_enc) != len(paths['norm_file_list']):
@@ -195,6 +215,9 @@ class EncDecManager:
             # TODO: implement the __str__ and __repr__ for EncPath to make this easier to print
         self._enc_dec_list(files_to_enc, enc=True, remove_old=remove_old)
 
+        # Now encrypt folder names
+        self._enc_dec_folders(paths['norm_folder_list'], enc=True)
+
     def _enc_dec_list(self, paths, enc: bool, remove_old):
         partial_func = partial(self._launch_single_end_dec, enc, remove_old)
         with Pool(self.workers) as p:
@@ -202,12 +225,23 @@ class EncDecManager:
             p.close()
             p.join()
             print("done files")
-        # TODO: add work on folders
 
-    def _launch_single_end_dec(self, enc: bool, remove_old: bool, path: EncPath, ):
+    def _enc_dec_folders(self, paths, enc:bool):
+        for folder in paths:
+            f_orig_path = folder.real_path
+            new_path = folder.encrypt(self.enc_dec) if enc else folder.decrypt(self.enc_dec)
+            if new_path and new_path != f_orig_path:
+                # rename all sub folders to keep path correct
+                for ch in self.folders_childes[f_orig_path]:
+                    # Add a new key do folder_childs with the new folder.
+                    self.folders_childes[new_path].add(ch)
+                    # Update folder paths of childes after folder renamed
+                    ch.update_parent_path(new_path)
+
+    def _launch_single_end_dec(self, enc: bool, remove_old: bool, path: EncPath):
         f_orig_path = path.real_path
         res = path.encrypt(self.enc_dec) if enc else path.decrypt(self.enc_dec)
-        if res and remove_old and res != f_orig_path:
+        if path.is_file and res and remove_old and res != f_orig_path:
             os.remove(f_orig_path)
 
     @staticmethod
@@ -255,6 +289,7 @@ def main():
     group.add_argument('-l', '--list', type=dir_path, help='list encrypted and decrypted files')
     parser.add_argument('-r', '--remove', action='store_true', help='remove converted files')
     parser.add_argument('-j', type=int, default=max(1, (cpu_count() - 1)), help='number of multi-processors to use')
+    # TODO: add flag to rename folders or not
     parser.add_argument('password')
     args = parser.parse_args()
     # pp = pprint.PrettyPrinter(indent=4, width=300)
@@ -280,7 +315,6 @@ def main():
 
     end = time.time()
     print("total: %.2fs" % (end - start))
-
 
 
 if __name__ == '__main__':
