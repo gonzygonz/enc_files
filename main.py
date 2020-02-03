@@ -10,6 +10,8 @@ from multiprocessing import Pool, cpu_count
 from functools import partial
 import pprint
 from collections import defaultdict
+from itertools import count
+from typing import Dict, List
 
 
 class EncDec:
@@ -108,7 +110,10 @@ class EncDec:
 
 
 class EncPath:
+    _ids = count(0)
+
     def __init__(self, path: str):
+        self.id = next(self._ids)
         self.orig_path = path
         self.real_path = path
         self.is_enc = os.path.basename(path).startswith("enc_")  # TODO: make this 'enc_' a program argument
@@ -144,18 +149,19 @@ class EncPath:
             return self.enc_name
         return None
 
-    def update_parent_path(self, new_path):
-        orig_parent = os.path.dirname(self.real_path)
-        self.dec_name = self.dec_name.replace(orig_parent, new_path)
-        self.enc_name = self.dec_name.replace(orig_parent, new_path)
-        self.real_path = self.dec_name.replace(orig_parent, new_path)
+    def update_parent_path(self, new_path, orig_path=None):
+        orig_parent = os.path.dirname(self.real_path) if not orig_path else orig_path
+        self.dec_name = self.dec_name.replace(orig_parent, new_path) if self.dec_name else self.dec_name
+        self.enc_name = self.enc_name.replace(orig_parent, new_path)if self.enc_name else self.enc_name
+        self.real_path = self.real_path.replace(orig_parent, new_path)if self.real_path else self.real_path
 
 
 class EncDecManager:
     def __init__(self, key, workers=1):
         self.enc_dec = EncDec(key)
         self.file_list = []
-        self.folders_childes = defaultdict(set)
+        self.work_list = self.file_list
+        self.folders_children = defaultdict(set)
         self.workers = workers
 
     def scan_path(self, path: str):
@@ -163,17 +169,16 @@ class EncDecManager:
         for Tfile in allFiles + allFolders:
             encpath = EncPath(Tfile)
             self.file_list.append(encpath)
-            if not encpath.is_file:
-                # Keep track of parents. this makes rename folders in O(n) instead of O(n^2)
-                self.folders_childes[os.path.dirname(Tfile)].add(encpath)
+            # Keep track of parents. this makes rename folders in O(n) instead of O(n^2)
+            self.folders_children[os.path.dirname(Tfile)].add(encpath)
 
     def print_paths(self):
         res = self._convert_to_paths(self.split_to_types())
         pp = pprint.PrettyPrinter(indent=4, width=300)
         print("Not encrypted Files:")
-        pp.pprint([p for (p, ep) in res['norm_file_list']])
+        pp.pprint([(i, p) for (i, p, ep) in res['norm_file_list']])
         print("\nNot encrypted Folders")
-        pp.pprint([p for (p, ep) in res['norm_folder_list']])
+        pp.pprint([(i, p) for (i, p, ep) in res['norm_folder_list']])
         print("\nEncrypted Files")
         pp.pprint(res['enc_file_list'])
         print("\nEncrypted Folders")
@@ -225,18 +230,24 @@ class EncDecManager:
             p.close()
             p.join()
             print("done files")
+        # TODO: Fix file_list not being updated with real paths because pool was used.
 
-    def _enc_dec_folders(self, paths, enc:bool):
+    def _enc_dec_folders(self, paths, enc: bool):
         for folder in paths:
             f_orig_path = folder.real_path
             new_path = folder.encrypt(self.enc_dec) if enc else folder.decrypt(self.enc_dec)
             if new_path and new_path != f_orig_path:
                 # rename all sub folders to keep path correct
-                for ch in self.folders_childes[f_orig_path]:
-                    # Add a new key do folder_childs with the new folder.
-                    self.folders_childes[new_path].add(ch)
-                    # Update folder paths of childes after folder renamed
-                    ch.update_parent_path(new_path)
+                self._update_children_paths(new_path, f_orig_path)
+
+    def _update_children_paths(self, new_path, old_path):
+        for ch in self.folders_children[old_path]:
+            # Add a new key do folder_childs with the new folder.
+            self.folders_children[new_path].add(ch)
+            # Update folder paths of children after folder renamed
+            if not ch.is_file:
+                self._update_children_paths(ch.real_path.replace(old_path, new_path), ch.real_path)
+            ch.update_parent_path(new_path)
 
     def _launch_single_end_dec(self, enc: bool, remove_old: bool, path: EncPath):
         f_orig_path = path.real_path
@@ -256,19 +267,31 @@ class EncDecManager:
 
         return allFiles, allFolders
 
-    def split_to_types(self):
+    def split_to_types(self, file_list=None):
+        file_list = self.work_list if not file_list else file_list
         result = {
-            "norm_file_list": [f for f in self.file_list if f.is_file and (not f.is_enc)],
-            "enc_file_list": [f for f in self.file_list if f.is_file and f.is_enc],
-            "norm_folder_list": [f for f in self.file_list if (not f.is_file) and (not f.is_enc)],
-            "enc_folder_list": [f for f in self.file_list if (not f.is_file) and f.is_enc],
+            "norm_file_list": [f for f in file_list if f.is_file and (not f.is_enc)],
+            "enc_file_list": [f for f in file_list if f.is_file and f.is_enc],
+            "norm_folder_list": [f for f in file_list if (not f.is_file) and (not f.is_enc)],
+            "enc_folder_list": [f for f in file_list if (not f.is_file) and f.is_enc],
         }
         return result
 
-    def _convert_to_paths(self, names_dict):
+    def _convert_to_paths(self, names_dict: Dict[str, List[EncPath]]):
+        res_dict = {}
         for l in names_dict:
-            names_dict[l] = [(f.get_dec_name(self.enc_dec), f.get_enc_name(self.enc_dec)) for f in names_dict[l]]
-        return names_dict
+            res_dict[l] = [(f.id, f.get_dec_name(self.enc_dec), f.get_enc_name(self.enc_dec)) for f in names_dict[l]]
+        return res_dict
+
+    def end_dec_by_id(self, f_ids: List[int], remove_old=False):
+        legal_list = [self.file_list[i] for i in f_ids if i < len(self.file_list)]
+        legal_enc_list = [p for p in legal_list if not p.is_enc]
+        legal_dec_list = [p for p in legal_list if p.is_enc]
+        self.work_list = legal_enc_list
+        self.enc_files(remove_old=remove_old)
+        self.work_list = legal_dec_list
+        self.dec_files(remove_old=remove_old)
+        self.work_list = self.file_list
 
 
 def dir_path(string):
@@ -306,6 +329,12 @@ def main():
             manager.dec_files(args.remove)
         elif args.list:
             manager.print_paths()
+            s_ids = input("file IDs to Encrypt/Decrypt (separated by space):").split()
+            try:
+                i_ids = [int(f_id) for f_id in s_ids]
+                manager.end_dec_by_id(i_ids, remove_old=args.remove)
+            except ValueError:
+                print("Not a Valid IDs: %s" % str(s_ids))
 
     elif os.path.isfile(start_path):
         if args.encrypt:
