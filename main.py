@@ -6,8 +6,7 @@ from Crypto.Cipher import ChaCha20
 import os, sys, pkg_resources
 import time
 import argparse
-from multiprocessing import Pool, cpu_count
-from functools import partial
+from multiprocessing import cpu_count, Semaphore, Process, Pipe, connection
 import pprint
 from collections import defaultdict
 from itertools import count
@@ -116,10 +115,14 @@ class EncPath:
         self.id = next(self._ids)
         self.orig_path = path
         self.real_path = path
-        self.is_enc = os.path.basename(path).startswith("enc_")  # TODO: make this 'enc_' a program argument
+        self.is_enc = self.is_path_enc(path)
         self.is_file = os.path.isfile(path)
         self.dec_name = path if not self.is_enc else None
         self.enc_name = path if self.is_enc else None
+
+    def is_path_enc(self, path):
+        # TODO: make this 'enc_' a program argument
+        return os.path.basename(path).startswith("enc_")
 
     def get_dec_name(self, enc_dec: EncDec):
         if not self.dec_name:
@@ -149,11 +152,22 @@ class EncPath:
             return self.enc_name
         return None
 
+    def update_new_path(self, new_path):
+        if not new_path:
+            return None
+        self.real_path = new_path
+        self.is_enc = self.is_path_enc(new_path)
+        if self.is_enc:
+            self.enc_name = new_path
+        else:
+            self.dec_name = new_path
+        return self.is_enc
+
     def update_parent_path(self, new_path, orig_path=None):
         orig_parent = os.path.dirname(self.real_path) if not orig_path else orig_path
         self.dec_name = self.dec_name.replace(orig_parent, new_path) if self.dec_name else self.dec_name
-        self.enc_name = self.enc_name.replace(orig_parent, new_path)if self.enc_name else self.enc_name
-        self.real_path = self.real_path.replace(orig_parent, new_path)if self.real_path else self.real_path
+        self.enc_name = self.enc_name.replace(orig_parent, new_path) if self.enc_name else self.enc_name
+        self.real_path = self.real_path.replace(orig_parent, new_path) if self.real_path else self.real_path
 
 
 class EncDecManager:
@@ -213,7 +227,8 @@ class EncDecManager:
         files_to_enc = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) not in existing_enc_files]
         # TODO: maybe make this list cubstraction with implementing == on EncPath class
         if len(files_to_enc) != len(paths['norm_file_list']):
-            files_not_to_enc = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) in existing_enc_files]
+            files_not_to_enc = [p for p in paths['norm_file_list'] if
+                                p.get_dec_name(self.enc_dec) in existing_enc_files]
             pp = pprint.PrettyPrinter(indent=4, width=300)
             print("Files already encrypted:")
             pp.pprint([p.get_dec_name(self.enc_dec) for p in files_not_to_enc])
@@ -224,13 +239,21 @@ class EncDecManager:
         self._enc_dec_folders(paths['norm_folder_list'], enc=True)
 
     def _enc_dec_list(self, paths, enc: bool, remove_old):
-        partial_func = partial(self._launch_single_end_dec, enc, remove_old)
-        with Pool(self.workers) as p:
-            p.map(partial_func, paths)
-            p.close()
+        # partial_func = partial(self._launch_single_enc_dec, enc, remove_old)
+        sema = Semaphore(self.workers)
+        all_processes = []
+        for path in paths:
+            sema.acquire()
+            recv_end, send_end = Pipe(False)
+            p = Process(target=self._launch_single_enc_dec, args=(enc, remove_old, path, sema, send_end))
+            all_processes.append((p, recv_end, path))
+            p.start()
+        for p, r, path in all_processes:
             p.join()
-            print("done files")
-        # TODO: Fix file_list not being updated with real paths because pool was used.
+            res = r.recv()
+            path.update_new_path(res)
+
+        print("done files")
 
     def _enc_dec_folders(self, paths, enc: bool):
         for folder in paths:
@@ -249,11 +272,16 @@ class EncDecManager:
                 self._update_children_paths(ch.real_path.replace(old_path, new_path), ch.real_path)
             ch.update_parent_path(new_path)
 
-    def _launch_single_end_dec(self, enc: bool, remove_old: bool, path: EncPath):
+    def _launch_single_enc_dec(self, enc: bool, remove_old: bool, path: EncPath, sema: Semaphore,
+                               send_msg: connection.PipeConnection):
         f_orig_path = path.real_path
         res = path.encrypt(self.enc_dec) if enc else path.decrypt(self.enc_dec)
         if path.is_file and res and remove_old and res != f_orig_path:
             os.remove(f_orig_path)
+        if sema:
+            sema.release()
+        if send_msg:
+            send_msg.send(res)
 
     @staticmethod
     def allfiles(path: str) -> (list, list):
