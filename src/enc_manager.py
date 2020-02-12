@@ -20,8 +20,8 @@ class EncPath:
         self.enc_name = path if self.is_enc else None
 
     def is_path_enc(self, path):
-        # TODO: make this 'enc_' a program argument
-        return os.path.basename(path).startswith("enc_")
+        from encryptor import ENC_SIGNATURE
+        return os.path.basename(path).startswith(ENC_SIGNATURE)
 
     def get_dec_name(self, enc_dec: EncDec):
         if not self.dec_name:

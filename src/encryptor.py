@@ -6,6 +6,9 @@ from Crypto.Cipher import ChaCha20
 import os
 import time
 
+# TODO: make this 'enc_' a program argument
+ENC_SIGNATURE = "enc_"
+
 
 class EncDec:
     def __init__(self, key):
@@ -21,7 +24,7 @@ class EncDec:
         ciphertext = cipher.encrypt(os.path.basename(filename).encode("utf8"))
         nonce = b64encode(cipher.nonce).decode('utf-8')
         ct = b64encode(ciphertext).decode('utf-8')
-        outFile = os.path.join(os.path.dirname(filename), "enc_{}".format((nonce + ct).replace('/', 'XXX')))
+        outFile = os.path.join(os.path.dirname(filename), "{}{}".format(ENC_SIGNATURE, (nonce + ct).replace('/', 'XXX')))
         if just_name:
             return outFile
 
