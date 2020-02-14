@@ -24,22 +24,22 @@ class EncDec:
         ciphertext = cipher.encrypt(os.path.basename(filename).encode("utf8"))
         nonce = b64encode(cipher.nonce).decode('utf-8')
         ct = b64encode(ciphertext).decode('utf-8')
-        outFile = os.path.join(os.path.dirname(filename), "{}{}".format(ENC_SIGNATURE, (nonce + ct).replace('/', 'XXX')))
+        outFile = os.path.join(os.path.dirname(filename), f"{ENC_SIGNATURE}{(nonce + ct).replace('/', 'XXX')}")
         if just_name:
             return outFile
 
         if os.path.isdir(filename):
             try:
                 os.rename(filename, outFile)
-                print("Encrypting folder name %s" % filename)
+                print(f"Encrypting folder name {filename}")
             except:
-                print("could not rename %s to %s" % (filename, outFile))
+                print(f"could not rename {filename} to {outFile}")
                 raise
             return outFile
         if os.path.isfile(outFile):
             raise FileExistsError(f"Encrypted version Exists: {outFile}")
 
-        print("Encrypting file %s (%d)MB" % (filename, filesize >> 20))
+        print(f"Encrypting file {filename} {filesize >> 20}MB")
         with open(filename, "rb") as infile:
             with open(outFile, "wb") as outfile:
                 outfile.write(str(filesize).zfill(16).encode("utf8"))
@@ -52,10 +52,11 @@ class EncDec:
                         chunk += b' ' * (16 - (len(chunk) % 16))
 
                     outfile.write(encryptor.encrypt(chunk))
-        print("Time taken: %.2fs" % (time.time() - f_start))
+        print(f"Time taken: {(time.time() - f_start):.2f}s")
         return outFile
 
     def decrypt(self, enc_filepath: str, just_name=False) -> str:
+        f_start = time.time()
         chunksize = 64 * 1024
         enc_filename = os.path.basename(enc_filepath)[4:].replace('XXX', '/')
         try:
@@ -64,7 +65,7 @@ class EncDec:
             cipher = ChaCha20.new(key=self.key, nonce=nonce)
             filename = cipher.decrypt(ciphertext).decode('utf-8')
         except (ValueError, KeyError):
-            raise ValueError("Incorrect decryption. Make sure password is correct for: %s" % enc_filepath)
+            raise ValueError(f"Incorrect decryption. Make sure password is correct for: {enc_filepath}")
             # TODO: add prints of such cases to a logger
 
         outFile = os.path.join(os.path.dirname(enc_filepath), filename)
@@ -75,7 +76,7 @@ class EncDec:
             try:
                 os.rename(enc_filepath, outFile)
             except:
-                print("could not rename %s to %s" % (enc_filepath, outFile))
+                print(f"could not rename {enc_filepath} to {outFile}")
                 raise
             return outFile
 
@@ -89,7 +90,7 @@ class EncDec:
             IV = infile.read(16)
             decryptor = AES.new(self.key, AES.MODE_CBC, IV)
 
-            print("New file name: " + filename)
+            print(f"New file name: {filename}")
 
             with open(outFile, "wb") as outfile:
                 while True:
@@ -100,4 +101,5 @@ class EncDec:
                     outfile.write(decryptor.decrypt(chunk))
 
                 outfile.truncate(int(filesize))
+        print(f"Time taken: {(time.time() - f_start):.2f}s")
         return outFile
