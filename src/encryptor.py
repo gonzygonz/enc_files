@@ -34,11 +34,11 @@ class EncDec:
                 print("Encrypting folder name %s" % filename)
             except:
                 print("could not rename %s to %s" % (filename, outFile))
-                return None
+                raise
             return outFile
         if os.path.isfile(outFile):
-            print("Encoded version exists")
-            return outFile
+            raise FileExistsError(f"Encrypted version Exists: {outFile}")
+
         print("Encrypting file %s (%d)MB" % (filename, filesize >> 20))
         with open(filename, "rb") as infile:
             with open(outFile, "wb") as outfile:
@@ -64,8 +64,8 @@ class EncDec:
             cipher = ChaCha20.new(key=self.key, nonce=nonce)
             filename = cipher.decrypt(ciphertext).decode('utf-8')
         except (ValueError, KeyError):
-            print("Incorrect decryption for file: %s" % enc_filepath)  # TODO: change all those prints to a logger
-            return None
+            raise ValueError("Incorrect decryption. Make sure password is correct for: %s" % enc_filepath)
+            # TODO: add prints of such cases to a logger
 
         outFile = os.path.join(os.path.dirname(enc_filepath), filename)
         if just_name:
@@ -76,11 +76,12 @@ class EncDec:
                 os.rename(enc_filepath, outFile)
             except:
                 print("could not rename %s to %s" % (enc_filepath, outFile))
-                pass
-            return None
+                raise
+            return outFile
 
         if os.path.isfile(outFile):
-            print("Decoded version Exists: %s" % outFile)
+            raise FileExistsError(f"Decrypted version Exists: {outFile}")
+            # TODO - check if we really want to raise here or return outFile
             return outFile
 
         with open(enc_filepath, "rb") as infile:

@@ -25,17 +25,23 @@ class EncPath:
 
     def get_dec_name(self, enc_dec: EncDec):
         if not self.dec_name:
-            self.dec_name = enc_dec.decrypt(self.orig_path, just_name=True)
+            self.dec_name = enc_dec.decrypt(self.real_path, just_name=True)
         return self.dec_name
 
     def get_enc_name(self, enc_dec: EncDec):
         if not self.enc_name:
-            self.enc_name = enc_dec.encrypt(self.orig_path, just_name=True)
+            self.enc_name = enc_dec.encrypt(self.real_path, just_name=True)
         return self.enc_name
 
     def decrypt(self, enc_dec: EncDec):
         if self.is_enc:
-            self.dec_name = enc_dec.decrypt(self.real_path)
+            try:
+                self.dec_name = enc_dec.decrypt(self.real_path)
+            except FileExistsError:
+                self.dec_name = self.get_dec_name(enc_dec)
+            except ValueError:
+                print("could not decrypt. bad password, log this error")
+                raise
             if self.dec_name:
                 self.real_path = self.dec_name
                 self.is_enc = False
@@ -44,7 +50,10 @@ class EncPath:
 
     def encrypt(self, enc_dec: EncDec):
         if not self.is_enc:
-            self.enc_name = enc_dec.encrypt(self.real_path)
+            try:
+                self.enc_name = enc_dec.encrypt(self.real_path)
+            except FileExistsError:
+                self.enc_name = self.get_enc_name(enc_dec)
             if self.enc_name:
                 self.real_path = self.enc_name
                 self.is_enc = True
@@ -98,13 +107,21 @@ class EncDecManager:
         pp.pprint(res['enc_folder_list'])
 
     def dec_file(self, path: str, remove_old=False):
-        new_path = self.enc_dec.decrypt(path)
+        try:
+            new_path = self.enc_dec.decrypt(path)
+        except ValueError:
+            print(f"Bad Password for {path}")
+            return None
         if new_path and remove_old and path != new_path:
             os.remove(path)
         return new_path
 
     def enc_file(self, path: str, remove_old=False):
-        new_path = self.enc_dec.encrypt(path)
+        try:
+            new_path = self.enc_dec.encrypt(path)
+        except ValueError:
+            print(f"Bad Password for {path}")
+            return None
         if new_path and remove_old and path != new_path:
             os.remove(path)
         return new_path
@@ -138,7 +155,6 @@ class EncDecManager:
         self._enc_dec_folders(paths['norm_folder_list'], enc=True)
 
     def _enc_dec_list(self, paths, enc: bool, remove_old):
-        # partial_func = partial(self._launch_single_enc_dec, enc, remove_old)
         sema = Semaphore(self.workers)
         all_processes = []
         for path in paths:
@@ -157,10 +173,13 @@ class EncDecManager:
     def _enc_dec_folders(self, paths, enc: bool):
         for folder in paths:
             f_orig_path = folder.real_path
-            new_path = folder.encrypt(self.enc_dec) if enc else folder.decrypt(self.enc_dec)
-            if new_path and new_path != f_orig_path:
-                # rename all sub folders to keep path correct
-                self._update_children_paths(new_path, f_orig_path)
+            try:
+                new_path = folder.encrypt(self.enc_dec) if enc else folder.decrypt(self.enc_dec)
+                if new_path and new_path != f_orig_path:
+                    # rename all sub folders to keep path correct
+                    self._update_children_paths(new_path, f_orig_path)
+            except ValueError as e:
+                print(f"Bad Password for dir: {f_orig_path}")
 
     def _update_children_paths(self, new_path, old_path):
         for ch in self.folders_children[old_path]:
@@ -174,13 +193,17 @@ class EncDecManager:
     def _launch_single_enc_dec(self, enc: bool, remove_old: bool, path: EncPath, sema: Semaphore,
                                send_msg: connection.PipeConnection):
         f_orig_path = path.real_path
-        res = path.encrypt(self.enc_dec) if enc else path.decrypt(self.enc_dec)
-        if path.is_file and res and remove_old and res != f_orig_path:
-            os.remove(f_orig_path)
-        if sema:
-            sema.release()
+        res = ""
+        try:
+            res = path.encrypt(self.enc_dec) if enc else path.decrypt(self.enc_dec)
+            if path.is_file and res and remove_old and res != f_orig_path:
+                os.remove(f_orig_path)
+        except ValueError as e:
+            print(f"Bad Password for file: {f_orig_path}")
         if send_msg:
             send_msg.send(res)
+        if sema:
+            sema.release()
 
     @staticmethod
     def allfiles(path: str) -> (list, list):
