@@ -83,7 +83,6 @@ class EncDec:
         if os.path.isfile(outFile):
             raise FileExistsError(f"Decrypted version Exists: {outFile}")
             # TODO - check if we really want to raise here or return outFile
-            return outFile
 
         with open(enc_filepath, "rb") as infile:
             filesize = infile.read(16)

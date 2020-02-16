@@ -200,10 +200,11 @@ class EncDecManager:
                 os.remove(f_orig_path)
         except ValueError as e:
             print(f"Bad Password for file: {f_orig_path}")
-        if send_msg:
-            send_msg.send(res)
-        if sema:
-            sema.release()
+        finally:
+            if send_msg:
+                send_msg.send(res)
+            if sema:
+                sema.release()
 
     @staticmethod
     def allfiles(path: str) -> (list, list):

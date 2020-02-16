@@ -4,6 +4,7 @@ import os
 import shutil
 import pytest
 import src.encryptor as en
+from stat import S_IREAD, S_IRGRP, S_IROTH, S_IWUSR
 
 
 ### Helper functions ###
@@ -32,10 +33,21 @@ def file_or_folder_exist_illegal(is_file, should_exist, path):
     return should_exist != exists
 
 
+def lock_folder(path):
+    __tracebackhide__ = True
+    temp_dir_locker = os.open(os.path.join(path, 'locker_files'), os.O_RDWR | os.O_CREAT)
+    return temp_dir_locker
+
+
+def unlock_folder(temp_dir_locker):
+    __tracebackhide__ = True
+    os.close(temp_dir_locker)
+
+
 tests_params = [("./tests/inputs/test1.txt", True),
-                          ("./tests/inputs/test1.txt", False),
-                          ("./tests/inputs/folder_test1", True),
-                          ("./tests/inputs/folder_test1", False)]
+                ("./tests/inputs/test1.txt", False),
+                ("./tests/inputs/folder_test1", True),
+                ("./tests/inputs/folder_test1", False)]
 
 
 ### Test functions ###
@@ -43,7 +55,6 @@ tests_params = [("./tests/inputs/test1.txt", True),
 def test_encryption_basics(path, just_name, tmpdir):
     is_file = os.path.isfile(path)
     file_to_test = create_temp_workspace(path, tmpdir)
-    # assert 0, file_to_test
     ec = get_new_ec()
     errors = []
 
@@ -95,7 +106,6 @@ def test_encryption_basics(path, just_name, tmpdir):
 def test_encryption_bad_password(path, just_name, tmpdir):
     is_file = os.path.isfile(path)
     file_to_test = create_temp_workspace(path, tmpdir)
-    # assert 0, file_to_test
     ec = get_new_ec()
     errors = []
 
@@ -113,6 +123,39 @@ def test_encryption_bad_password(path, just_name, tmpdir):
 
     if file_or_folder_exist_illegal(is_file, is_file or just_name, file_to_test): errors.append(
         f"Original file got deleted by decrypt with bad password: {file_to_test}")
+
+    # Summarize errors
+    assert not errors, f"errors occurred:\nfile: {file_to_test}\n{chr(10).join(errors)}"
+
+
+@pytest.mark.parametrize("path,just_name", tests_params)
+def test_encryption_cant_overwrite(path, just_name, tmpdir):
+    is_file = os.path.isfile(path)
+    if is_file or just_name:
+        return
+    file_to_test = create_temp_workspace(path, tmpdir)
+    ec = get_new_ec()
+    errors = []
+
+    # Test encrypt fails if cant rename a folder
+    # os.chmod(file_to_test, S_IREAD|S_IRGRP|S_IROTH)
+    temp_dir_locker = lock_folder(file_to_test)
+    try:
+        new_name = ec.encrypt(file_to_test, just_name=False)
+        errors.append(f"Encryption without being able to rename a folder didnt throw an error {file_to_test}")
+    except PermissionError:
+        pass
+
+    unlock_folder(temp_dir_locker)
+    new_name = ec.encrypt(file_to_test, just_name=False)
+
+    temp_dir_locker2 = lock_folder(new_name)
+    try:
+        ec.decrypt(new_name, just_name=False)
+        errors.append(f"Decryption without being able to rename a folder didnt throw an error {file_to_test}")
+    except PermissionError:
+        pass
+    unlock_folder(temp_dir_locker2)
 
     # Summarize errors
     assert not errors, f"errors occurred:\nfile: {file_to_test}\n{chr(10).join(errors)}"
