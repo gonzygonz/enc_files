@@ -20,11 +20,7 @@ class EncDec:
         filesize = os.path.getsize(filename)
         IV = get_random_bytes(16)
         encryptor = AES.new(self.key, AES.MODE_CBC, IV)
-        cipher = ChaCha20.new(key=self.key)
-        ciphertext = cipher.encrypt(os.path.basename(filename).encode("utf8"))
-        nonce = b64encode(cipher.nonce).decode('utf-8')
-        ct = b64encode(ciphertext).decode('utf-8')
-        outFile = os.path.join(os.path.dirname(filename), f"{ENC_SIGNATURE}{(nonce + ct).replace('/', 'XXX')}")
+        outFile = self._make_enc_filename(filename)
         if just_name:
             return outFile
 
@@ -58,15 +54,20 @@ class EncDec:
     def decrypt(self, enc_filepath: str, just_name=False) -> str:
         f_start = time.time()
         chunksize = 64 * 1024
-        enc_filename = os.path.basename(enc_filepath)[4:].replace('XXX', '/')
+        enc_filename_candidate = os.path.basename(enc_filepath).replace(ENC_SIGNATURE,"")
+        enc_filename = enc_filename_candidate.replace('XXX', '/')
         try:
-            nonce = b64decode(enc_filename[0:12])
-            ciphertext = b64decode(enc_filename[12:])
-            cipher = ChaCha20.new(key=self.key, nonce=nonce)
-            filename = cipher.decrypt(ciphertext).decode('utf-8')
+            filename = self._get_dec_filename(enc_filename)
         except (ValueError, KeyError):
-            raise ValueError(f"Incorrect decryption. Make sure password is correct for: {enc_filepath}")
-            # TODO: add prints of such cases to a logger
+            try:
+                # in the unlucky situatoin where originally we had X/ in the hash, result enc name is XXXX and
+                # would replace to /X - this is to recover from that event
+                enc_filename = enc_filename_candidate.replace('XXXX', 'X/')
+                filename = self._get_dec_filename(enc_filename)
+            except (ValueError, KeyError):
+                print("bad key")
+                raise ValueError(f"Incorrect decryption. Make sure password is correct for: {enc_filepath}")
+                # TODO: add prints of such cases to a logger
 
         outFile = os.path.join(os.path.dirname(enc_filepath), filename)
         if just_name:
@@ -101,4 +102,19 @@ class EncDec:
 
                 outfile.truncate(int(filesize))
         print(f"Time taken: {(time.time() - f_start):.2f}s")
+        return outFile
+
+    def _get_dec_filename(self, enc_filename):
+        nonce = b64decode(enc_filename[0:12])
+        ciphertext = b64decode(enc_filename[12:])
+        cipher = ChaCha20.new(key=self.key, nonce=nonce)
+        filename = cipher.decrypt(ciphertext).decode('utf-8')
+        return filename
+
+    def _make_enc_filename(self, filename):
+        cipher = ChaCha20.new(key=self.key)
+        ciphertext = cipher.encrypt(os.path.basename(filename).encode("utf8"))
+        nonce = b64encode(cipher.nonce).decode('utf-8')
+        ct = b64encode(ciphertext).decode('utf-8')
+        outFile = os.path.join(os.path.dirname(filename), f"{ENC_SIGNATURE}{(nonce + ct).replace('/', 'XXX')}")
         return outFile
