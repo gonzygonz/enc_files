@@ -4,7 +4,8 @@ import pprint
 from collections import defaultdict
 from itertools import count
 from typing import Dict, List
-from encryptor import EncDec
+from enc_files.encryptor import EncDec
+
 
 
 class EncPath:
@@ -20,7 +21,7 @@ class EncPath:
         self.enc_name = path if self.is_enc else None
 
     def is_path_enc(self, path):
-        from encryptor import ENC_SIGNATURE
+        from enc_files.encryptor import ENC_SIGNATURE
         return os.path.basename(path).startswith(ENC_SIGNATURE)
 
     def get_dec_name(self, enc_dec: EncDec):

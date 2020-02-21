@@ -2,7 +2,7 @@ import os
 import time
 import argparse
 from multiprocessing import cpu_count
-from enc_manager import EncDecManager
+from enc_files.enc_manager import EncDecManager
 
 
 def dir_path(string):
