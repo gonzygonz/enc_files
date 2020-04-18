@@ -7,7 +7,6 @@ from typing import Dict, List
 from enc_files.encryptor import EncDec
 
 
-
 class EncPath:
     _ids = count(0)
 
@@ -80,12 +79,13 @@ class EncPath:
 
 
 class EncDecManager:
-    def __init__(self, key, workers=1):
-        self.enc_dec = EncDec(key)
+    def __init__(self, key, workers=1, verbose=False):
+        self.enc_dec = EncDec(key, verbose=verbose)
         self.file_list = []
         self.work_list = self.file_list
         self.folders_children = defaultdict(set)
         self.workers = workers
+        self.verbose = verbose
 
     def scan_path(self, path: str):
         allFiles, allFolders = self.allfiles(path)
@@ -96,6 +96,7 @@ class EncDecManager:
             self.folders_children[os.path.dirname(Tfile)].add(encpath)
 
     def print_paths(self):
+        # TODO: make prints with sizes, and prettier
         res = self._convert_to_paths(self.split_to_types())
         pp = pprint.PrettyPrinter(indent=4, width=300)
         print("Not encrypted Files:")
@@ -106,6 +107,8 @@ class EncDecManager:
         pp.pprint(res['enc_file_list'])
         print("\nEncrypted Folders")
         pp.pprint(res['enc_folder_list'])
+
+    # TODO:  add function to return list of items instead of prints
 
     def dec_file(self, path: str, remove_old=False):
         try:
@@ -141,9 +144,10 @@ class EncDecManager:
         existing_enc_files = [p.get_dec_name(self.enc_dec) for p in paths['enc_file_list']]
 
         # Work only on files that doesnt have encrypted version yet
+        # TODO: maybe remove files already encrypted if remove_old==True
         files_to_enc = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) not in existing_enc_files]
         # TODO: maybe make this list subtraction with implementing == on EncPath class
-        if len(files_to_enc) != len(paths['norm_file_list']):
+        if len(files_to_enc) != len(paths['norm_file_list']) and self.verbose:
             files_not_to_enc = [p for p in paths['norm_file_list'] if
                                 p.get_dec_name(self.enc_dec) in existing_enc_files]
             pp = pprint.PrettyPrinter(indent=4, width=300)
@@ -151,6 +155,15 @@ class EncDecManager:
             pp.pprint([p.get_dec_name(self.enc_dec) for p in files_not_to_enc])
             # TODO: implement the __str__ and __repr__ for EncPath to make this easier to print
         self._enc_dec_list(files_to_enc, enc=True, remove_old=remove_old)
+
+        # delete orig files if already had encrypted version and we want to remove old
+        if remove_old:
+            files_to_clear = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) in existing_enc_files]
+            for path in files_to_clear:
+                f_orig_path = path.real_path
+                os.remove(f_orig_path)
+                # TODO: make sure to update path with correct enc path now, or remove from list because file was deleted
+                # path.update_new_path(path.)
 
         # Now encrypt folder names
         self._enc_dec_folders(paths['norm_folder_list'], enc=True)

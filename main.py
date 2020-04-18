@@ -22,15 +22,17 @@ def main():
     group.add_argument('-d', '--decrypt', type=str, help='decrypt files')
     group.add_argument('-l', '--list', type=dir_path, help='list encrypted and decrypted files')
     parser.add_argument('-r', '--remove', action='store_true', help='remove converted files')
+    parser.add_argument('-v', '--verbose', action='store_true', help='print extra information')
     parser.add_argument('-j', type=int, default=max(1, (cpu_count() - 1)), help='number of multi-processors to use')
-    # TODO: add flag to rename folders or not
+    # TODO: add flag to rename folders only, or not at all
+
     parser.add_argument('password')
     args = parser.parse_args()
     # pp = pprint.PrettyPrinter(indent=4, width=300)
     start = time.time()
 
     password = args.password.encode("utf8")
-    manager = EncDecManager(password, workers=args.j)
+    manager = EncDecManager(password, workers=args.j, verbose=args.verbose)
     start_path = args.encrypt or args.decrypt or args.list
     if os.path.isdir(start_path):
         manager.scan_path(start_path)
