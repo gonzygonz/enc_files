@@ -144,7 +144,6 @@ class EncDecManager:
         existing_enc_files = [p.get_dec_name(self.enc_dec) for p in paths['enc_file_list']]
 
         # Work only on files that doesnt have encrypted version yet
-        # TODO: maybe remove files already encrypted if remove_old==True
         files_to_enc = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) not in existing_enc_files]
         # TODO: maybe make this list subtraction with implementing == on EncPath class
         if len(files_to_enc) != len(paths['norm_file_list']) and self.verbose:
@@ -232,7 +231,7 @@ class EncDecManager:
 
         return allFiles, allFolders
 
-    def split_to_types(self, file_list=None):
+    def split_to_types(self, file_list=None, prepare_all_names=False):
         file_list = self.work_list if not file_list else file_list
         result = {
             "norm_file_list": [f for f in file_list if f.is_file and (not f.is_enc)],
@@ -240,6 +239,10 @@ class EncDecManager:
             "norm_folder_list": [f for f in file_list if (not f.is_file) and (not f.is_enc)],
             "enc_folder_list": [f for f in file_list if (not f.is_file) and f.is_enc],
         }
+        if prepare_all_names:
+            for f in result["norm_file_list"] + result["enc_file_list"] + result["norm_folder_list"] + result["enc_folder_list"] :
+                f.get_dec_name(self.enc_dec)
+                f.get_enc_name(self.enc_dec)
         return result
 
     def _convert_to_paths(self, names_dict: Dict[str, List[EncPath]]):
@@ -249,7 +252,19 @@ class EncDecManager:
         return res_dict
 
     def end_dec_by_id(self, f_ids: List[int], remove_old=False):
-        legal_list = [self.file_list[i] for i in f_ids if i < len(self.file_list)]
+        # legal_list = [self.file_list[i] for i in f_ids if i < len(self.file_list)]
+        legal_list = [i for i in self.file_list if i.id in f_ids]
+        legal_enc_list = [p for p in legal_list if not p.is_enc]
+        legal_dec_list = [p for p in legal_list if p.is_enc]
+        self.work_list = legal_enc_list
+        self.enc_files(remove_old=remove_old)
+        self.work_list = legal_dec_list
+        self.dec_files(remove_old=remove_old)
+        self.work_list = self.file_list
+
+    def end_dec_by_paths(self, f_ids: List[str], remove_old=False):
+        # legal_list = [self.file_list[i] for i in f_ids if i < len(self.file_list)]
+        legal_list = [i for i in self.file_list if i.real_path in f_ids]
         legal_enc_list = [p for p in legal_list if not p.is_enc]
         legal_dec_list = [p for p in legal_list if p.is_enc]
         self.work_list = legal_enc_list
