@@ -32,7 +32,7 @@ def main():
     start = time.time()
 
     password = args.password.encode("utf8")
-    manager = EncDecManager(password, workers=args.j, verbose=args.verbose)
+    manager = EncDecManager(password, workers=args.j, verbose=args.verbose, make_hidden=True)
     start_path = args.encrypt or args.decrypt or args.list
     if os.path.isdir(start_path):
         manager.scan_path(start_path)

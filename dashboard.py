@@ -55,7 +55,7 @@ app.layout = html.Div(
                 value=[],
                 persistence=True,
             )
-        ], style={"width": '100%', 'display': "inline-block"}
+        ], style={'display': "inline-block"}
         ),
         html.Hr(),
         html.Div(id='display-selected-values'),
@@ -66,7 +66,7 @@ app.layout = html.Div(
 
 def get_manager(path_name, password) -> EncDecManager:
     if password and path_name and os.path.isdir(path_name):
-        manager = EncDecManager(password.encode("utf8"), workers=2, verbose=False)
+        manager = EncDecManager(password.encode("utf8"), workers=2, verbose=False, make_hidden=True)
         manager.scan_path(path_name)
         return manager
     return None
@@ -128,8 +128,8 @@ def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc
             manager.end_dec_by_id([i["id"] for i in enc_folders['enc_folder_list'].values()])
 
     if enc_dec_selected_btn:
-        print(dec_list)
-        print(enc_list)
+        # print(dec_list)
+        # print(enc_list)
         manager = get_manager(path_name, password)
         if manager:
             manager.end_dec_by_paths((dec_list or []) + (enc_list or []), remove_old=bool(delete_old))
@@ -161,4 +161,4 @@ def set_display_children(dec_list, enc_list):
 
 
 if __name__ == '__main__':
-    app.run_server(port=8055)
+    app.run_server(debug=False, port=8055, host='0.0.0.0')

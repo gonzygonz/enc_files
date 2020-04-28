@@ -79,8 +79,8 @@ class EncPath:
 
 
 class EncDecManager:
-    def __init__(self, key, workers=1, verbose=False):
-        self.enc_dec = EncDec(key, verbose=verbose)
+    def __init__(self, key, workers=1, verbose=False, make_hidden=False):
+        self.enc_dec = EncDec(key, verbose=verbose, make_hidden=make_hidden)
         self.file_list = []
         self.work_list = self.file_list
         self.folders_children = defaultdict(set)
@@ -234,6 +234,7 @@ class EncDecManager:
     def split_to_types(self, file_list=None, prepare_all_names=False):
         file_list = self.work_list if not file_list else file_list
         result = {
+            # TODO: change this strings to ENUM class?
             "norm_file_list": [f for f in file_list if f.is_file and (not f.is_enc)],
             "enc_file_list": [f for f in file_list if f.is_file and f.is_enc],
             "norm_folder_list": [f for f in file_list if (not f.is_file) and (not f.is_enc)],

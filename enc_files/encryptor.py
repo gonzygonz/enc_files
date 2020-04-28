@@ -11,13 +11,18 @@ ENC_SIGNATURE = "enc_"
 
 
 class EncDec:
-    def __init__(self, key, verbose=False):
+    def __init__(self, key, verbose=False, make_hidden=False):
         self.key = SHA256.new(key).digest()
         self.verbose = verbose
+        self.hidden = make_hidden
 
     def _vprint(self, *args, **kwargs):
         if self.verbose:
             print(*args, **kwargs)
+
+    def _make_hidden(self, path):
+        command = f'attrib +h "{path}"'
+        os.system(command)
 
     def encrypt(self, filename: str, just_name=False):
         f_start = time.time()
@@ -53,6 +58,8 @@ class EncDec:
                         chunk += b' ' * (16 - (len(chunk) % 16))
 
                     outfile.write(encryptor.encrypt(chunk))
+        if self.hidden:
+            self._make_hidden(outFile)
         print(f"Time taken: {(time.time() - f_start):.2f}s")
         return outFile
 
