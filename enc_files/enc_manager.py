@@ -257,19 +257,21 @@ class EncDecManager:
         legal_list = [i for i in self.file_list if i.id in f_ids]
         legal_enc_list = [p for p in legal_list if not p.is_enc]
         legal_dec_list = [p for p in legal_list if p.is_enc]
-        self.work_list = legal_enc_list
+        orig_work_list = self.work_list
+        self.work_list = legal_enc_list + [p for p in orig_work_list if p.is_enc]
         self.enc_files(remove_old=remove_old)
-        self.work_list = legal_dec_list
+        self.work_list = legal_dec_list + [p for p in orig_work_list if not p.is_enc]
         self.dec_files(remove_old=remove_old)
-        self.work_list = self.file_list
+        self.work_list = orig_work_list
 
     def end_dec_by_paths(self, f_ids: List[str], remove_old=False):
         # legal_list = [self.file_list[i] for i in f_ids if i < len(self.file_list)]
         legal_list = [i for i in self.file_list if i.real_path in f_ids]
         legal_enc_list = [p for p in legal_list if not p.is_enc]
         legal_dec_list = [p for p in legal_list if p.is_enc]
-        self.work_list = legal_enc_list
+        orig_work_list = self.work_list
+        self.work_list = legal_enc_list + [p for p in orig_work_list if p.is_enc]
         self.enc_files(remove_old=remove_old)
-        self.work_list = legal_dec_list
+        self.work_list = legal_dec_list + [p for p in orig_work_list if not p.is_enc]
         self.dec_files(remove_old=remove_old)
-        self.work_list = self.file_list
+        self.work_list = orig_work_list

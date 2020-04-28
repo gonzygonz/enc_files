@@ -5,7 +5,6 @@ import dash_html_components as html
 from dash.dependencies import Input, Output, State
 from enc_files.enc_manager import EncDecManager
 
-
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(external_stylesheets=external_stylesheets)
@@ -17,6 +16,8 @@ app.layout = html.Div(
             dcc.Input(
                 id="in_path",
                 type="text",
+                autoComplete="on",
+
             ), ], style={'display': "inline-block"}),
         html.Div([
             html.P("pass"),
@@ -29,31 +30,38 @@ app.layout = html.Div(
             style={'display': 'inline-block'}),
         html.Div([
             html.Div([
-                html.Button(id='enc-dec-selected-button', n_clicks=0, children='Encrypt/Dycrypt selected'),
-            ],
-                style={'display': 'inline-block'}),
-            html.Div([dcc.Checklist(id="delete-old",
-                                    options=[{'label': 'Delete converted files?  ', 'value': "yes"}],)],
-                     style={'display': 'inline-block'}),
-            html.Div([
                 html.Button(id='enc-folders-button', n_clicks=0, children='Encrypt folders')],
                 style={'display': 'inline-block'}),
             html.Div([
                 html.Button(id='dec-folders-button', n_clicks=0, children='Decrypt folders')],
                 style={'display': 'inline-block'}),
+            html.Div([
+                html.Button(id='enc-all-button', n_clicks=0, children='Encrypt all Files')],
+                style={'display': 'inline-block'}),
+            html.Div([
+                html.Button(id='dec-all-button', n_clicks=0, children='Decrypt all Files')],
+                style={'display': 'inline-block'}),
+            html.Div([
+                html.Button(id='del_enc_version-button', n_clicks=0, children='Delete encrypted version')],
+                style={'display': 'inline-block'}),
+        ]),
+        html.Div([
+            html.Div([
+                html.Button(id='enc-dec-selected-button', n_clicks=0, children='Encrypt/Dycrypt selected'),
+            ],
+                style={'display': 'inline-block'}),
+            html.Div([dcc.Checklist(id="delete-old",
+                                    options=[{'label': 'Delete converted files?  ', 'value': "yes"}], )],
+                     style={'display': 'inline-block'}),
         ]),
         html.Div([
             html.P("Normal files"),
             dcc.Checklist(
                 id='opt-checklist-dec',
-                value=[],
-                persistence=True,
             ),
             html.P("Encrypted files"),
             dcc.Checklist(
                 id='opt-checklist-enc',
-                value=[],
-                persistence=True,
             )
         ], style={'display': "inline-block"}
         ),
@@ -95,6 +103,9 @@ def get_names(path_name, password, names, manager_in=None):
      Input('enc-folders-button', 'n_clicks'),
      Input('dec-folders-button', 'n_clicks'),
      Input('enc-dec-selected-button', 'n_clicks'),
+     Input('enc-all-button', 'n_clicks'),
+     Input('dec-all-button', 'n_clicks'),
+     Input('del_enc_version-button', 'n_clicks'),
      ],
     [State('in_path', 'value'),
      State('in_pass', 'value'),
@@ -102,38 +113,39 @@ def get_names(path_name, password, names, manager_in=None):
      State('opt-checklist-dec', 'value'),
      State('opt-checklist-enc', 'value')]
 )
-def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc_dec_selected_btn_n, path_name,
-                         password, delete_old, dec_list, enc_list):
+def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc_dec_selected_btn_n, enc_all_btn_n, dec_all_btn_n,
+                         del_enc_ver_btn_n, path_name, password, delete_old, dec_list, enc_list):
     changed_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
-    submt_btn, enc_folder_btn, dec_folder_btn, enc_dec_selected_btn = False, False, False, False
-    if 'submit-button-state' in changed_id:
-        submit_btn = True
-    if 'enc-folders-button' in changed_id:
-        enc_folder_btn = True
-    if 'dec-folders-button' in changed_id:
-        dec_folder_btn = True
-    if 'enc-dec-selected-button' in changed_id:
-        enc_dec_selected_btn = True
 
-    if enc_folder_btn:
+    cur_buttons = {'enc-folders-button': 'norm_folder_list',
+                   'dec-folders-button': 'enc_folder_list',
+                   'enc-all-button': 'norm_file_list',
+                   'dec-all-button': 'enc_file_list',
+                   }
+    cur_button = [cur_buttons[btn] for btn in cur_buttons.keys() if btn in changed_id]
+    if cur_button:
+        # encrypt/decrypt all of 1 type - according to whcih button selected
         manager = get_manager(path_name, password)
         if manager:
-            norm_folders = get_names(path_name, password, ['norm_folder_list'], manager_in=manager)
-            manager.end_dec_by_id([i["id"] for i in norm_folders['norm_folder_list'].values()])
+            work_list = get_names(path_name, password, [cur_button[0]], manager_in=manager)
+            manager.end_dec_by_id([i["id"] for i in work_list[cur_button[0]].values()], remove_old=bool(delete_old))
 
-    if dec_folder_btn:
-        manager = get_manager(path_name, password)
-        if manager:
-            enc_folders = get_names(path_name, password, ['enc_folder_list'], manager_in=manager)
-            manager.end_dec_by_id([i["id"] for i in enc_folders['enc_folder_list'].values()])
-
-    if enc_dec_selected_btn:
-        # print(dec_list)
-        # print(enc_list)
+    if 'enc-dec-selected-button' in changed_id:  # for btn in [, 'del_enc_version-button']):
+        # encrypt and decrypt all files selected
         manager = get_manager(path_name, password)
         if manager:
             manager.end_dec_by_paths((dec_list or []) + (enc_list or []), remove_old=bool(delete_old))
 
+    if 'del_enc_version-button' in changed_id:
+        # delete all encrypted version or the normal files selected
+        manager = get_manager(path_name, password)
+        if manager and dec_list:
+            dec_set = set(dec_list)
+            work_list = get_names(path_name, password, ['enc_file_list'], manager_in=manager)
+            work_set = [i for i in work_list['enc_file_list'].values() if i['name'] in dec_set]
+            manager.end_dec_by_id([i["id"] for i in work_set], remove_old=True)
+
+    # make the lists view
     res_dict = get_names(path_name, password, ['enc_file_list', 'norm_file_list'])
 
     enc_list_checklist = [
