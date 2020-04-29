@@ -2,12 +2,13 @@ import dash
 import os
 import dash_core_components as dcc
 import dash_html_components as html
+import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from enc_files.enc_manager import EncDecManager
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+external_stylesheets = [dbc.themes.JOURNAL, 'https://codepen.io/chriddyp/pen/bWLwgP.css']
 
-app = dash.Dash(external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 app.layout = html.Div(
     [
@@ -28,6 +29,14 @@ app.layout = html.Div(
         html.Div([
             html.Button(id='submit-button-state', n_clicks=0, children='Submit')],
             style={'display': 'inline-block'}),
+        html.Div([
+            dbc.Alert(
+                children="Hello! I am an alert",
+                id="alerts",
+                color="danger",
+                dismissable=True,
+                is_open=False, )],
+            style={'display': "inline-block"}),
         html.Div([
             html.Div([
                 html.Button(id='enc-folders-button', n_clicks=0, children='Encrypt folders')],
@@ -86,9 +95,13 @@ def get_names(path_name, password, names, manager_in=None):
         res_dict[n] = {}
     manager = manager_in if manager_in else get_manager(path_name, password)
     if manager:
-        types = manager.split_to_types(prepare_all_names=True)
-        for n in names:
-            res_dict[n] = {f.real_path: {"id": f.id, "name": f.dec_name} for f in types[n]}
+        try:
+            types = manager.split_to_types(prepare_all_names=True)
+            for n in names:
+                res_dict[n] = {f.real_path: {"id": f.id, "name": f.dec_name} for f in types[n]}
+        except ValueError as err:
+            res_dict['error'] = str(err)
+
     return res_dict
 
 
@@ -97,6 +110,8 @@ def get_names(path_name, password, names, manager_in=None):
      Output('opt-checklist-dec', 'options'),
      Output('opt-checklist-dec', 'value'),
      Output('opt-checklist-enc', 'value'),
+     Output("alerts", "is_open"),
+     Output('alerts', 'children'),
      # Output('display-selected-values', 'children'),
      ],
     [Input('submit-button-state', 'n_clicks'),
@@ -113,8 +128,8 @@ def get_names(path_name, password, names, manager_in=None):
      State('opt-checklist-dec', 'value'),
      State('opt-checklist-enc', 'value')]
 )
-def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc_dec_selected_btn_n, enc_all_btn_n, dec_all_btn_n,
-                         del_enc_ver_btn_n, path_name, password, delete_old, dec_list, enc_list):
+def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc_dec_selected_btn_n, enc_all_btn_n,
+                         dec_all_btn_n, del_enc_ver_btn_n, path_name, password, delete_old, dec_list, enc_list):
     changed_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
 
     cur_buttons = {'enc-folders-button': 'norm_folder_list',
@@ -154,7 +169,12 @@ def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc
     dec_list_checklist = [
         {'label': f'{res_dict["norm_file_list"][i]["name"]} ({res_dict["norm_file_list"][i]["id"]})', 'value': i} for i
         in res_dict['norm_file_list']]
-    return enc_list_checklist, dec_list_checklist, [], []
+    if "error" in res_dict:
+        print(res_dict['error'])
+        alert_message = res_dict['error']
+    else:
+        alert_message = ""
+    return enc_list_checklist, dec_list_checklist, [], [], "error" in res_dict, alert_message
 
 
 @app.callback(
