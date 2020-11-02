@@ -4,7 +4,7 @@ import pprint
 from collections import defaultdict
 from itertools import count
 from typing import Dict, List
-from enc_files.encryptor import EncDec
+from enc_files.encryptor import EncDec, legalize_path
 
 
 class EncPath:
@@ -15,7 +15,7 @@ class EncPath:
         self.orig_path = path
         self.real_path = path
         self.is_enc = self.is_path_enc(path)
-        self.is_file = os.path.isfile(path)
+        self.is_file = os.path.isfile(legalize_path(path))
         self.dec_name = path if not self.is_enc else None
         self.enc_name = path if self.is_enc else None
 
@@ -117,7 +117,7 @@ class EncDecManager:
             print(f"Bad Password for {path}")
             return None
         if new_path and remove_old and path != new_path:
-            os.remove(path)
+            os.remove(legalize_path(path))
         return new_path
 
     def enc_file(self, path: str, remove_old=False):
@@ -127,7 +127,7 @@ class EncDecManager:
             print(f"Bad Password for {path}")
             return None
         if new_path and remove_old and path != new_path:
-            os.remove(path)
+            os.remove(legalize_path(path))
         return new_path
 
     def dec_files(self, remove_old=False):
@@ -160,7 +160,7 @@ class EncDecManager:
             files_to_clear = [p for p in paths['norm_file_list'] if p.get_dec_name(self.enc_dec) in existing_enc_files]
             for path in files_to_clear:
                 f_orig_path = path.real_path
-                os.remove(f_orig_path)
+                os.remove(legalize_path(f_orig_path))
                 # TODO: make sure to update path with correct enc path now, or remove from list because file was deleted
                 # path.update_new_path(path.)
 
@@ -210,7 +210,7 @@ class EncDecManager:
         try:
             res = path.encrypt(self.enc_dec) if enc else path.decrypt(self.enc_dec)
             if path.is_file and res and remove_old and res != f_orig_path:
-                os.remove(f_orig_path)
+                os.remove(legalize_path(f_orig_path))
         except ValueError as e:
             print(f"Bad Password for file: {f_orig_path}")
         finally:
@@ -223,7 +223,7 @@ class EncDecManager:
     def allfiles(path: str) -> (list, list):
         allFiles = []
         allFolders = []
-        for root, subfiles, files in os.walk(path, topdown=False):
+        for root, subfiles, files in os.walk(legalize_path(path), topdown=False):
             for names in files:
                 allFiles.append(os.path.join(root, names))
             for folder in subfiles:

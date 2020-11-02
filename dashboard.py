@@ -25,6 +25,7 @@ app.layout = html.Div(
             dcc.Input(
                 id="in_pass",
                 type="password",
+                debounce=True,
             ), ], style={'display': "inline-block"}),
         html.Div([
             html.Button(id='submit-button-state', n_clicks=0, children='Submit')],
@@ -76,7 +77,6 @@ app.layout = html.Div(
         ),
         html.Hr(),
         html.Div(id='display-selected-values'),
-
     ]
 )
 
@@ -98,7 +98,9 @@ def get_names(path_name, password, names, manager_in=None):
         try:
             types = manager.split_to_types(prepare_all_names=True)
             for n in names:
-                res_dict[n] = {f.real_path: {"id": f.id, "name": f.dec_name} for f in types[n]}
+                res_dict[n] = {f.real_path: {"id": f.id, "name": f.dec_name,
+                                             "size": os.stat(f.real_path).st_size / (1024 * 1024) if os.path.isfile(
+                                                 f.real_path) else 0} for f in types[n]}
         except ValueError as err:
             res_dict['error'] = str(err)
 
@@ -121,6 +123,7 @@ def get_names(path_name, password, names, manager_in=None):
      Input('enc-all-button', 'n_clicks'),
      Input('dec-all-button', 'n_clicks'),
      Input('del_enc_version-button', 'n_clicks'),
+     Input('in_pass', 'value'),
      ],
     [State('in_path', 'value'),
      State('in_pass', 'value'),
@@ -129,7 +132,8 @@ def get_names(path_name, password, names, manager_in=None):
      State('opt-checklist-enc', 'value')]
 )
 def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc_dec_selected_btn_n, enc_all_btn_n,
-                         dec_all_btn_n, del_enc_ver_btn_n, path_name, password, delete_old, dec_list, enc_list):
+                         dec_all_btn_n, del_enc_ver_btn_n, in_pass, path_name, password, delete_old, dec_list,
+                         enc_list):
     changed_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
 
     cur_buttons = {'enc-folders-button': 'norm_folder_list',
@@ -164,10 +168,12 @@ def update_date_dropdown(submit_btn_n, enc_folders_btn_n, dec_folders_btn_n, enc
     res_dict = get_names(path_name, password, ['enc_file_list', 'norm_file_list'])
 
     enc_list_checklist = [
-        {'label': f'{res_dict["enc_file_list"][i]["name"]} ({res_dict["enc_file_list"][i]["id"]})', 'value': i} for i in
+        {'label': f'{res_dict["enc_file_list"][i]["name"]} ({res_dict["enc_file_list"][i]["size"]:.2f}MB)', 'value': i}
+        for i in
         res_dict['enc_file_list']]
     dec_list_checklist = [
-        {'label': f'{res_dict["norm_file_list"][i]["name"]} ({res_dict["norm_file_list"][i]["id"]})', 'value': i} for i
+        {'label': f'{res_dict["norm_file_list"][i]["name"]} ({res_dict["norm_file_list"][i]["size"]:.2f}MB)',
+         'value': i} for i
         in res_dict['norm_file_list']]
     if "error" in res_dict:
         print(res_dict['error'])
@@ -193,4 +199,4 @@ def set_display_children(dec_list, enc_list):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False, port=8055, host='0.0.0.0')
+    app.run_server(debug=False, port=8056, host='0.0.0.0')

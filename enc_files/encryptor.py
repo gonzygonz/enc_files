@@ -5,9 +5,17 @@ from base64 import b64encode, b64decode
 from Crypto.Cipher import ChaCha20
 import os
 import time
+from sys import platform
+from pathlib import Path
 
 # TODO: make this 'enc_' a program argument
 ENC_SIGNATURE = "enc_"
+
+
+def legalize_path(path: str):
+    if platform == "win32" and len(path) > 200:
+        return "\\\\?\\" + str(Path(path))
+    return path
 
 
 class EncDec:
@@ -21,33 +29,33 @@ class EncDec:
             print(*args, **kwargs)
 
     def _make_hidden(self, path):
-        command = f'attrib +h "{path}"'
+        command = f'attrib +h +s "{path}"'
         os.system(command)
 
     def encrypt(self, filename: str, just_name=False):
         f_start = time.time()
         chunksize = 64 * 1024
-        filesize = os.path.getsize(filename)
+        filesize = os.path.getsize(legalize_path(filename))
         IV = get_random_bytes(16)
         encryptor = AES.new(self.key, AES.MODE_CBC, IV)
         outFile = self._make_enc_filename(filename)
         if just_name:
             return outFile
 
-        if os.path.isdir(filename):
+        if os.path.isdir(legalize_path(filename)):
             try:
-                os.rename(filename, outFile)
+                os.rename(legalize_path(filename), outFile)
                 self._vprint(f"Encrypting folder name {filename}")
             except:
                 print(f"could not rename {filename} to {outFile}")
                 raise
             return outFile
-        if os.path.isfile(outFile):
+        if os.path.isfile(legalize_path(outFile)):
             raise FileExistsError(f"Encrypted version Exists: {outFile}")
 
         self._vprint(f"Encrypting file {filename} {filesize >> 20}MB")
-        with open(filename, "rb", buffering=chunksize*10) as infile:
-            with open(outFile, "wb", buffering=chunksize*10) as outfile:
+        with open(legalize_path(filename), "rb", buffering=chunksize*10) as infile:
+            with open(legalize_path(outFile), "wb", buffering=chunksize*10) as outfile:
                 outfile.write(str(filesize).zfill(16).encode("utf8"))
                 outfile.write(IV)
                 while True:
@@ -86,26 +94,26 @@ class EncDec:
         if just_name:
             return outFile
 
-        if os.path.isdir(enc_filepath):
+        if os.path.isdir(legalize_path(enc_filepath)):
             try:
-                os.rename(enc_filepath, outFile)
+                os.rename(legalize_path(enc_filepath), outFile)
             except:
                 print(f"could not rename {enc_filepath} to {outFile}")
                 raise
             return outFile
 
-        if os.path.isfile(outFile):
+        if os.path.isfile(legalize_path(outFile)):
             raise FileExistsError(f"Decrypted version Exists: {outFile}")
             # TODO - check if we really want to raise here or return outFile
 
-        with open(enc_filepath, "rb", buffering=chunksize*10) as infile:
+        with open(legalize_path(enc_filepath), "rb", buffering=chunksize*10) as infile:
             filesize = infile.read(16)
             IV = infile.read(16)
             decryptor = AES.new(self.key, AES.MODE_CBC, IV)
 
             self._vprint(f"New file name: {filename}")
 
-            with open(outFile, "wb", buffering=chunksize*10) as outfile:
+            with open(legalize_path(outFile), "wb", buffering=chunksize*10) as outfile:
                 while True:
                     chunk = infile.read(chunksize)
                     if len(chunk) == 0:
